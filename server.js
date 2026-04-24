@@ -2,13 +2,11 @@ const express = require('express');
 const https = require('https');
 const app = express();
 app.use(express.json());
-
 const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN || 'auvo-social-webhook-2026';
-
 function igPost(path, params) {
   return new Promise((resolve) => {
     const query = new URLSearchParams(params).toString();
-    const options = { hostname: 'graph.facebook.com', path: `/v19.0/${path}?${query}`, method: 'POST' };
+    const options = { hostname: 'graph.facebook.com', path: `/v21.0/${path}?${query}`, method: 'POST' };
     const req = https.request(options, (res) => {
       let d = ''; res.on('data', c => d += c);
       res.on('end', () => { try { resolve(JSON.parse(d)); } catch(e) { resolve({ error: 'inválido' }); } });
@@ -17,7 +15,6 @@ function igPost(path, params) {
     req.end();
   });
 }
-
 async function gerarResposta(text, username) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
@@ -39,21 +36,16 @@ async function gerarResposta(text, username) {
     req.write(body); req.end();
   });
 }
-
-// Verificação webhook
 app.get('/webhook', (req, res) => {
   const { 'hub.mode': mode, 'hub.verify_token': token, 'hub.challenge': challenge } = req.query;
   if (mode === 'subscribe' && token === VERIFY_TOKEN) return res.status(200).send(challenge);
   return res.status(403).send('Verificação falhou');
 });
-
-// Receber eventos do Instagram
 app.post('/webhook', async (req, res) => {
   res.status(200).json({ status: 'ok' });
   const body = req.body;
   if (body.object !== 'instagram') return;
   const accountId = process.env.INSTAGRAM_ACCOUNT_ID;
-
   for (const entry of (body.entry || [])) {
     for (const change of (entry.changes || [])) {
       if (change.field === 'comments') {
@@ -67,7 +59,7 @@ app.post('/webhook', async (req, res) => {
             message: resposta.resposta,
             access_token: process.env.INSTAGRAM_ACCESS_TOKEN
           });
-          if (r.error) console.log('Erro:', r.error.message || r.error);
+          if (r.error) console.log('Erro:', JSON.stringify(r.error));
           else console.log(`Respondido: ${resposta.resposta}`);
         } else {
           console.log(`Baixa confiança — não respondido automaticamente`);
@@ -76,8 +68,6 @@ app.post('/webhook', async (req, res) => {
     }
   }
 });
-
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
-
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));

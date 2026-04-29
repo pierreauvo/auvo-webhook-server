@@ -4,13 +4,21 @@ const app = express();
 app.use(express.json());
 const VERIFY_TOKEN = process.env.WEBHOOK_VERIFY_TOKEN || 'auvo-social-webhook-2026';
 
-function igPost(path, params) {
+function igPost(path, body_params) {
   return new Promise((resolve) => {
-    const query = new URLSearchParams(params).toString();
+    const body = JSON.stringify(body_params);
+    const options = {
+      hostname: 'graph.facebook.com',
+      path: `/v21.0/${path}`,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body)
+      }
+    };
     console.log(`[igPost] POST /v21.0/${path}`);
-    console.log(`[igPost] token prefix: ${(params.access_token||'').substring(0,20)}`);
-    console.log(`[igPost] token length: ${(params.access_token||'').length}`);
-    const options = { hostname: 'graph.facebook.com', path: `/v21.0/${path}?${query}`, method: 'POST' };
+    console.log(`[igPost] token prefix: ${(body_params.access_token||'').substring(0,20)}`);
+    console.log(`[igPost] token length: ${(body_params.access_token||'').length}`);
     const req = https.request(options, (res) => {
       let d = ''; res.on('data', c => d += c);
       res.on('end', () => {
@@ -18,7 +26,8 @@ function igPost(path, params) {
         try { resolve(JSON.parse(d)); } catch(e) { resolve({ error: 'inválido' }); }
       });
     });
-    req.on('error', (e) => { console.log(`[igPost] request error: ${e.message}`); resolve({ error: 'falhou' }); });
+    req.on('error', (e) => { console.log(`[igPost] error: ${e.message}`); resolve({ error: 'falhou' }); });
+    req.write(body);
     req.end();
   });
 }
@@ -59,9 +68,10 @@ app.post('/webhook', async (req, res) => {
   for (const entry of (body.entry || [])) {
     for (const change of (entry.changes || [])) {
       if (change.field === 'comments') {
-        const { id: commentId, text, from } = change.value || {};
+        const { id: commentId, text, from, media } = change.value || {};
         if (!commentId || !text || from?.id === accountId) continue;
         console.log(`Comentário de @${from?.username}: ${text}`);
+        console.log(`Comment ID: ${commentId}, Media ID: ${media?.id}`);
         const resposta = await gerarResposta(text, from?.username || 'usuario');
         if (!resposta) { console.log('IA sem resposta'); continue; }
         if (resposta.confianca === 'alta') {
